@@ -12,6 +12,9 @@ from IPython.display import display, Math
 # numpy
 import numpy as np
 
+# scipy
+from scipy import optimize
+
 # matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -541,3 +544,127 @@ ax3.set_aspect('auto')
 print('Ground Speed Based Control Law for Straight Paths')
 plt.show()
 
+
+# - - - - - - - - - - -
+# Critical Wind Factor
+# - - - - - - - - - - -
+
+
+# function to evaluate derivative of f w.r.t. path orientation angle lP
+def eval_df(l, a):
+    # inputs:
+    # l         path orientation angle
+    # a         wind ratio
+    # outputs:
+    # df/dl
+
+    sinl = np.sin(l)
+    sin2l = sinl*sinl
+    cosl = np.cos(l)
+    a2 = a*a
+    sin4l = sin2l*sin2l
+    one_m_a2sin2l = 1 - a2 * sin2l
+    one_m_a2sin2l_3_2 = one_m_a2sin2l**(3/2)
+
+    if a == 1:
+        return 1 - 2 * sin2l + sin4l
+    else:
+        return a*(a*(a2 * sin4l - 2 * sin2l + 1) + cosl * one_m_a2sin2l_3_2) / one_m_a2sin2l_3_2
+
+
+# function to evaluate f
+def eval_f(l, a):
+    # inputs:
+    # l         path orientation angle
+    # a         wind ratio
+    # outputs:
+    # f
+
+    sinl = np.sin(l)
+    sin2l = sinl * sinl
+    cosl = np.cos(l)
+    a2 = a * a
+    a2sin2l = a2 * sin2l
+
+    if a2sin2l >= 1.0:
+        return 2
+    else:
+        return a2 * sinl * cosl / np.sqrt(1 - a2sin2l) + a * sinl
+
+
+# function to evaluate critical f approximation
+def eval_f_crit_analytic_approx(a):
+    # inputs:
+    # a         wind ratio
+    # outputs:
+    # fcrit
+
+    return 2*(1 - np.sqrt(1 - a))
+
+
+len_data = 501
+
+wrd1 = np.linspace(0, 0.995, len_data - 100)
+wrd2 = np.linspace(0.995, 1, 101)
+wind_ratio_data = np.concatenate((wrd1[:len_data - 101], wrd2))
+
+path_ori_crit_num_sol = np.zeros(len_data)      # numerical solution of critical path orientation per wind ratio
+
+f_crit_analytic_approx = np.zeros(len_data)     # approximation of critical f value per wind ratio
+f_crit_num_sol = np.zeros(len_data)             # numerical solution of critical f value per wind ratio
+
+
+# numerical soultion
+verbose_sol_output = False  # enable to display each solution status and value
+
+a_solution_failed = False
+for i in range(len_data):
+    sol = optimize.root(eval_df, np.pi/2*0.99, args=(wind_ratio_data[i],))
+    path_ori_crit_num_sol[i] = sol.x
+    if verbose_sol_output:
+        print(f'{wind_ratio_data[i]:.2f}' + ':' + str(sol.success) + '; sol = ' + str(sol.x))
+    if not sol.success:
+        a_solution_failed = True
+
+if a_solution_failed:
+    print('ERROR: One ore more numerical solutions failed, enable verbose_sol_output and re-run cell.')
+
+# df(a=0) = 0, define a crit orientation at 0 which follows the trend of the other solutions
+path_ori_crit_num_sol[0] = np.pi/2
+
+for i in range(len_data):
+    f_crit_num_sol[i] = eval_f(path_ori_crit_num_sol[i], wind_ratio_data[i])
+
+# approximate solution
+for i in range(len_data):
+    f_crit_analytic_approx[i] = eval_f_crit_analytic_approx(wind_ratio_data[i])
+
+f_crit_analytic_approx_err = f_crit_analytic_approx - f_crit_num_sol
+
+
+# plot critical wind factor num solution and approx
+fig = plt.figure(figsize=(16, 4))
+spec = gridspec.GridSpec(ncols=3, nrows=1, figure=fig)
+
+ax1 = fig.add_subplot(spec[:, 0])
+ax2 = fig.add_subplot(spec[:, 1])
+ax3 = fig.add_subplot(spec[:, 2])
+
+ax1.plot(wind_ratio_data, np.rad2deg(path_ori_crit_num_sol), linewidth=plot_lw, color='black')
+ax1.set_ylabel(r'${\lambda_P}^\star$ [deg]')
+ax1.set_title(r'Critical Path Orientation')
+ax1.set_xlabel(r'Wind Ratio $\alpha_W$')
+
+ax2.plot(wind_ratio_data, f_crit_num_sol, linewidth=plot_lw, color='black', label=r'Numerical Solution')
+ax2.plot(wind_ratio_data, f_crit_analytic_approx, '--', linewidth=plot_lw, color='tab:blue', label=r'Approx. Analytic Solution')
+ax2.set_ylabel(r'${f_W}^\star$')
+ax2.set_title(r'Critical Wind Factor')
+ax2.set_xlabel(r'Wind Ratio $\alpha_W$')
+ax2.legend(loc="upper left")
+
+ax3.plot([wind_ratio_data[i] for i in [0, -1]], [0, 0], linewidth=plot_lw, color='black')
+ax3.plot(wind_ratio_data, f_crit_analytic_approx_err, linewidth=plot_lw, color='tab:blue')
+ax3.set_title(r'Approximation Error')
+ax3.set_xlabel(r'Wind Ratio $\alpha_W$')
+
+plt.show()
